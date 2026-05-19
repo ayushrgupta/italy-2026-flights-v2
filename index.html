@@ -577,29 +577,33 @@ function renderResults(){
 }
 
 
-// Build a one-way Google Flights URL using protobuf (tfs=) encoding
-function buildOneWayUrl(fromCode, toCode, date) {
+// Build a true open-jaw Google Flights URL (type 3 = multi-city)
+// Leg 1: US city → Italian arrival airport (outDate)
+// Leg 2: Italian departure airport → US city (retDate)
+function buildOpenJawUrl(fromCode, toCode, retFromCode, retToCode, outDate, retDate) {
   function encodeAirport(code) {
-    return new Uint8Array([0x08,0x01,0x12,0x03,code.charCodeAt(0),code.charCodeAt(1),code.charCodeAt(2)]);
+    return new Uint8Array([0x08,0x01,0x12,0x03,
+      code.charCodeAt(0),code.charCodeAt(1),code.charCodeAt(2)]);
   }
   function encodeLeg(date, from, to) {
-    const d = new TextEncoder().encode(date);
+    const d   = new TextEncoder().encode(date);
     const dep = encodeAirport(from), arr = encodeAirport(to);
-    const datePb = new Uint8Array([0x12, d.length, ...d]);
-    const depPb  = new Uint8Array([0x6a, dep.length, ...dep]);
-    const arrPb  = new Uint8Array([0x72, arr.length, ...arr]);
-    const leg = new Uint8Array([...datePb,...depPb,...arrPb]);
+    const leg = new Uint8Array([
+      0x12, d.length,   ...d,
+      0x6a, dep.length, ...dep,
+      0x72, arr.length, ...arr,
+    ]);
     return new Uint8Array([0x1a, leg.length, ...leg]);
   }
   function toBase64Url(bytes) {
-    let s=''; bytes.forEach(b=>s+=String.fromCharCode(b));
+    let s=''; bytes.forEach(b => s += String.fromCharCode(b));
     return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   }
-  // One-way header/footer (field 2 = 1 for one-way)
-  const header = [0x08,0x1c,0x10,0x01];
-  const footer = [0x48,0x01,0x70,0x01,0x98,0x01,0x01,0xc8,0x01,0x01];
-  const leg = encodeLeg(date, fromCode, toCode);
-  const tfs = toBase64Url(new Uint8Array([...header,...leg,...footer]));
+  const header = [0x08,0x1c,0x10,0x03]; // type 3 = open-jaw / multi-city
+  const footer = [0x42,0x01,0x01,0x48,0x01,0x70,0x01,0x98,0x01,0x01,0xc8,0x01,0x01];
+  const l1  = encodeLeg(outDate, fromCode, toCode);
+  const l2  = encodeLeg(retDate, retFromCode, retToCode);
+  const tfs = toBase64Url(new Uint8Array([...header,...l1,...l2,...footer]));
   return `https://www.google.com/travel/flights?hl=en&gl=us&curr=USD&tfs=${tfs}`;
 }
 
@@ -663,19 +667,14 @@ function buildCard(f,cityId,ai,ao,wk,over15){
     </div>
     <div class="card-cta">
       <div>
-        <div class="price-lbl">Est. round trip</div>
-        <div class="price-val ${pc}">${f.ret_raw_price ? `${f.raw_price||'?'} + ${f.ret_raw_price}` : rawPrice}</div>
-        <div style="font-size:.58rem;color:var(--cream-dim);text-align:right;margin-top:2px">${f.ret_raw_price ? 'out + return' : 'outbound only'}</div>
+        <div class="price-lbl">Est. total (both legs)</div>
+        <div class="price-val ${pc}">${f.ret_raw_price && price < 99990 ? '$'+price.toLocaleString() : rawPrice}</div>
+        <div style="font-size:.58rem;color:var(--cream-dim);text-align:right;margin-top:2px;line-height:1.4">
+          ${f.ret_raw_price ? `${f.raw_price||'?'} out · ${f.ret_raw_price} ret` : 'outbound leg only'}
+        </div>
         <div class="live-badge">● live</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
-        <a href="${buildOneWayUrl(c.code, ai, depDate2)}" target="_blank" class="btn-book" style="font-size:.7rem;padding:6px 11px;background:var(--gold)">
-          ✈ Outbound ↗
-        </a>
-        <a href="${buildOneWayUrl(ao, c.code, w.ret)}" target="_blank" class="btn-book" style="font-size:.7rem;padding:6px 11px;background:rgba(212,168,67,0.4);color:var(--cream)">
-          ↩ Return ↗
-        </a>
-      </div>
+      <a href="${buildOpenJawUrl(c.code, ai, ao, c.code, depDate2, w.ret)}" target="_blank" class="btn-book">Book ↗</a>
     </div>
   </div>`;
 }
