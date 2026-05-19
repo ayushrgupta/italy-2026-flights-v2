@@ -437,12 +437,28 @@ async function runSearch(){
         fetchFlights(c.code,ai,ao,w.outFri,w.ret,'20,23'),
         fetchFlights(c.code,ai,ao,w.outSat,w.ret,null),
       ]);
-      const all=[
-        ...(fri?.best_flights||[]).map(f=>({...f,day:'Fri'})),
-        ...(fri?.other_flights||[]).map(f=>({...f,day:'Fri'})),
-        ...(sat?.best_flights||[]).map(f=>({...f,day:'Sat'})),
-        ...(sat?.other_flights||[]).map(f=>({...f,day:'Sat'})),
-      ].sort((a,b)=>(a.price||99999)-(b.price||99999));
+      // fast-flights returns {outbound:[...], return:[...]}
+      const normalize=(data,day)=>(data?.outbound||[]).map(f=>({
+        price:           parsePrice(f.price),
+        total_duration:  parseDuration(f.duration),
+        flights:[{
+          departure_airport:{id:c.code, time:f.departure||''},
+          arrival_airport:  {id:ai,     time:f.arrival||''},
+          airline:    f.name||'',
+          airline_logo:'',
+          flight_number:'',
+          duration:   parseDuration(f.duration),
+          overnight:  false,
+        }],
+        layovers:[],
+        is_best:      f.is_best||false,
+        stops_label:  String(f.stops||''),
+        day:          day,
+        raw_price:    f.price,
+        current_price: data.current_price||null,
+      }));
+      const all=[...normalize(fri,'Fri'),...normalize(sat,'Sat')]
+        .sort((a,b)=>(a.price||99999)-(b.price||99999));
       cache[key]={flights:all,city,ai,ao,wk};
     }catch(e){
       cache[key]={error:e.message,city,ai,ao,wk};
@@ -475,12 +491,13 @@ function buildFlatRows(){
         'City':c.label, 'US Airport':c.code,
         'Fly Into':cached.ai, 'Fly Into Name':APTS[cached.ai],
         'Fly Out Of':cached.ao, 'Fly Out Of Name':APTS[cached.ao],
-        'Price USD':f.price||'',
-        'Nonstop':legs.length===1?'Yes':'No',
+        'Price USD':f.raw_price||f.price||'',
+        'Nonstop':(f.stops_label==='nonstop'||f.stops_label==='0'||legs.length===1)?'Yes':'No',
+        'Stops':f.stops_label||'',
         'Total Flight Time':totStr,
         'Over 15hr':tot>900?'Yes':'No',
-        'Airlines':[...new Set(legs.map(l=>l.airline||''))].join(' + '),
-        'Flight Numbers':legs.map(l=>l.flight_number||'').join(' / '),
+        'Airlines':[...new Set(legs.map(l=>l.airline||''))].filter(Boolean).join(' + '),
+        'Flight Numbers':legs.map(l=>l.flight_number||'').filter(Boolean).join(' / '),
         'Train to Cinque Terre':`~${Math.round(TRAIN_CT[cached.ai]/60)}h`,
         'Rank':rank+1,
         'Fetched':new Date().toISOString(),
@@ -562,10 +579,11 @@ function renderResults(){
 function buildCard(f,cityId,ai,ao,wk,over15){
   const c=CITIES[cityId], w=WEEKS[wk];
   const legs=f.flights||[], layovers=f.layovers||[];
-  const nonstop=legs.length===1||(f.stops_label&&(f.stops_label==="nonstop"||f.stops_label==="0"));
+  const nonstop=(f.stops_label==='nonstop'||f.stops_label==='0 stops'||f.stops_label===0||f.stops_label==='0'||legs.length===1);
   const tot=f.total_duration||0;
   const totStr=tot?`${Math.floor(tot/60)}h ${tot%60}m`:'—';
-  const price=f.price;
+  const price=f.price||0;
+  const rawPrice=f.raw_price||(price?`$${price.toLocaleString()}`:'—');
   const pc=price<450?'pg':price<650?'pa':'pr';
   const tc=tot>840?'vr':tot>720?'va':'vg';
   const trainMins=TRAIN_CT[ai]||90;
@@ -614,13 +632,13 @@ function buildCard(f,cityId,ai,ao,wk,over15){
       <div class="stats-row">
         <div class="stat"><span class="s-lbl">Total flight time</span><span class="s-val ${tc}">${totStr}</span></div>
         <div class="stat"><span class="s-lbl">Train → Cinque Terre</span><span class="s-val vc">${trainStr}</span></div>
-        <div class="stat"><span class="s-lbl">Stops</span><span class="s-val vc">${nonstop?'Nonstop':legs.length-1}</span></div>
+        <div class="stat"><span class="s-lbl">Stops</span><span class="s-val vc">${nonstop?'Nonstop':(f.stops_label||legs.length-1+' stop')}</span></div>
       </div>
     </div>
     <div class="card-cta">
       <div>
         <div class="price-lbl">Per person</div>
-        <div class="price-val ${pc}">$${price?.toLocaleString()||'—'}</div>
+        <div class="price-val ${pc}">${rawPrice}</div>
         <div class="live-badge">● live</div>
       </div>
       <a href="${bookUrl}" target="_blank" class="btn-book">Book ↗</a>
