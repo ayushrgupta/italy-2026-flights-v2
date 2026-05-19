@@ -173,6 +173,13 @@
   .data-note{margin-top:26px;padding:13px 17px;background:var(--card);border:1px solid var(--border);
     border-radius:9px;font-size:.72rem;color:var(--cream-dim);line-height:1.6}
 
+  .flight-legs-block{margin:8px 0;display:flex;flex-direction:column;gap:2px}
+  .leg-section-lbl{font-size:.63rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--cream-dim);margin-bottom:3px}
+  .leg-row{display:flex;align-items:center;gap:8px;font-size:.82rem;flex-wrap:wrap}
+  .leg-apt{font-family:monospace;font-weight:700;font-size:.85rem;color:var(--cream);min-width:32px}
+  .leg-time-val{font-weight:600;color:var(--gold);font-size:.85rem;min-width:52px}
+  .leg-arrow{color:var(--cream-dim);font-size:.7rem;flex:1;text-align:center;min-width:40px;max-width:80px}
+  .leg-dur-val{font-size:.72rem;color:var(--cream-dim);margin-left:auto}
   @media(max-width:640px){
     .flight-card{grid-template-columns:3px 1fr}
     .card-cta{display:none}
@@ -438,6 +445,29 @@ async function runSearch(){
         fetchFlights(c.code,ai,ao,w.outSat,w.ret,null),
       ]);
       // fast-flights returns {outbound:[...], return:[...]}
+      // Filter by departure time: Fri = 8pm+ (>=20:00), Sat = before 2pm (<14:00)
+      function parseHour(depStr) {
+        if (!depStr) return 0;
+        // Handle "8:30 PM", "10:20 PM", "1:15 AM", "20:30", "08:30"
+        const ampm = depStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (ampm) {
+          let h = parseInt(ampm[1]);
+          const m = parseInt(ampm[2]);
+          const period = ampm[3].toUpperCase();
+          if (period === 'PM' && h !== 12) h += 12;
+          if (period === 'AM' && h === 12) h = 0;
+          return h + m/60;
+        }
+        const mil = depStr.match(/(\d{1,2}):(\d{2})/);
+        if (mil) return parseInt(mil[1]) + parseInt(mil[2])/60;
+        return 0;
+      }
+      function keepFlight(f, day) {
+        const hour = parseHour(f.departure);
+        if (day === 'Fri') return hour >= 20;        // 8pm or later
+        if (day === 'Sat') return hour < 14;         // before 2pm
+        return true;
+      }
       // Pair each outbound flight with the cheapest return flight
       const bestRet = (fri?.return||[]).concat(sat?.return||[])
         .sort((a,b)=>parsePrice(a.price)-parsePrice(b.price))[0]||null;
@@ -452,6 +482,7 @@ async function runSearch(){
           ret_price:      retPrice,
           raw_price:      f.price,
           ret_raw_price:  bestRet ? bestRet.price : null,
+          raw_return:     bestRet || null,
           total_duration: parseDuration(f.duration),
           flights:[{
             departure_airport:{id:c.code, time:f.departure||''},
@@ -589,49 +620,6 @@ function renderResults(){
 }
 
 
-// Airline direct booking URL templates
-// {FROM}, {TO}, {DATE} are substituted with actual values
-const AIRLINE_URLS = {
-  'Delta':            'https://www.delta.com/us/en/flight-search/search?tripType=ONE_WAY&origin={FROM}&destination={TO}&departureDate={DATE}&paxCount=1&selectedProducts=MAIN',
-  'American':         'https://www.aa.com/booking/search?locale=en_US&pax=1&adult=1&type=OneWay&searchType=Flight&carriers=ALL&outbDate={DATE}&outbFrom={FROM}&outbTo={TO}',
-  'United':           'https://www.united.com/en/us/fsr/choose-flights?f={FROM}&t={TO}&d={DATE}&tt=1&at=1&sc=7&px=1&taxng=1&newHP=True',
-  'Lufthansa':        'https://www.lufthansa.com/us/en/flight-search#outward={FROM}-{TO}-{DATE};cabin=Y;adult=1',
-  'British Airways':  'https://www.britishairways.com/travel/fx/public/en_us?eId=106047&from={FROM}&to={TO}&depart={DATE}&cabin=M&adult=1',
-  'ITA Airways':      'https://www.itaairways.com/en/flight-search?origin={FROM}&destination={TO}&departureDate={DATE}&adults=1&cabinClass=economy&tripType=ONE_WAY',
-  'Air France':       'https://www.airfrance.us/search/results?pax=1:0:0:0:0:0:0:0&cabinClass=ECONOMY&leg={FROM}:{TO}:{DATE}&tripType=OW',
-  'KLM':              'https://www.klm.com/search/results?pax=1:0:0:0:0:0:0:0&cabinClass=ECONOMY&leg={FROM}:{TO}:{DATE}&tripType=OW',
-  'Emirates':         'https://www.emirates.com/us/english/book/flights/#/?type=O&class=ECO&adults=1&from={FROM}&to={TO}&depart={DATE}',
-  'Icelandair':       'https://www.icelandair.com/flights/booking/?cabin=economy&adults=1&fromcity={FROM}&tocity={TO}&outdate={DATE}&triptype=oneway',
-  'Norse Atlantic':   'https://www.flynorse.com/en-us/flights?origin={FROM}&destination={TO}&departureDate={DATE}&adults=1&cabin=economy&tripType=ONE_WAY',
-  'TAP Air Portugal': 'https://www.flytap.com/en-us/flight-search?adults=1&cabin=economy&tripType=one-way&origin={FROM}&destination={TO}&outboundDate={DATE}',
-  'Swiss':            'https://www.swiss.com/us/en/book/flights#outward={FROM}-{TO}-{DATE};cabin=Y;adult=1',
-  'SWISS':            'https://www.swiss.com/us/en/book/flights#outward={FROM}-{TO}-{DATE};cabin=Y;adult=1',
-  'Aer Lingus':       'https://www.aerlingus.com/flights/searchresults/?flightSearchType=1&adult=1&originIata={FROM}&destinationIata={TO}&outboundDate={DATE}',
-  'SAS':              'https://www.flysas.com/en/us/book/flights/?origin={FROM}&destination={TO}&outboundDate={DATE}&adt=1&cabin=M&tripType=oneWay',
-  'Finnair':          'https://www.finnair.com/en-gb/flight-search?adults=1&cabin=ECONOMY&tripType=ONEWAY&origin={FROM}&destination={TO}&departureDate={DATE}',
-  'Iberia':           'https://www.iberia.com/us/flights/?or={FROM}&de={TO}&ida={DATE}&v=1&ad=1&cl=N&tf=IB',
-};
-
-function getAirlineUrl(airlineName, from, to, date) {
-  // Try exact match first, then partial match
-  let template = AIRLINE_URLS[airlineName];
-  if (!template) {
-    const key = Object.keys(AIRLINE_URLS).find(k =>
-      airlineName.toLowerCase().includes(k.toLowerCase()) ||
-      k.toLowerCase().includes(airlineName.toLowerCase())
-    );
-    template = key ? AIRLINE_URLS[key] : null;
-  }
-  if (!template) {
-    // Fallback to Google Flights open-jaw search
-    return buildOpenJawUrl(from, to, to, from, date, date);
-  }
-  return template
-    .replace(/{FROM}/g, from)
-    .replace(/{TO}/g, to)
-    .replace(/{DATE}/g, date);
-}
-
 // Build a true open-jaw Google Flights URL (type 2, no footer)
 // Matches the exact format used by Google Flights / SerpApi
 function buildOpenJawUrl(fromCode, toCode, retFromCode, retToCode, outDate, retDate) {
@@ -711,11 +699,29 @@ function buildCard(f,cityId,ai,ao,wk,over15){
         <span style="color:var(--amber)">${APTS[ao]}</span><span class="rsep">→</span>
         <span style="color:var(--cream-dim);font-size:.88rem">${c.label}</span>
       </div>
-      <div class="legs">${legsHtml}</div>
+      <div class="flight-legs-block">
+        <div class="leg-section-lbl">✈ Outbound — ${f.day} ${depDate2.slice(5)} · ${f.raw?.name||legs[0]?.airline||'—'} · ${nonstop?'Nonstop':(f.stops_label||'1 stop')}${f.is_roundtrip?' · <span style="color:var(--green)">Round-trip fare</span>':' · <span style="color:var(--amber)">Two one-ways</span>'}</div>
+        <div class="leg-row">
+          <span class="leg-apt">${c.code}</span>
+          <span class="leg-time-val">${f.raw?.departure||legs[0]?.departure_airport?.time?.slice(11,16)||'—'}</span>
+          <span class="leg-arrow">──✈──</span>
+          <span class="leg-time-val">${f.raw?.arrival||legs[0]?.arrival_airport?.time?.slice(11,16)||'—'}</span>
+          <span class="leg-apt">${ai}</span>
+          <span class="leg-dur-val">${totStr}</span>
+        </div>
+        <div class="leg-section-lbl" style="margin-top:7px">↩ Return — Sun ${w.ret.slice(5)} · ${f.raw_return?.name||'—'} · ${f.ret_raw_price||'—'}</div>
+        <div class="leg-row">
+          <span class="leg-apt">${ao}</span>
+          <span class="leg-time-val">${f.raw_return?.departure||'—'}</span>
+          <span class="leg-arrow">──✈──</span>
+          <span class="leg-time-val">${f.raw_return?.arrival||'—'}</span>
+          <span class="leg-apt">${c.code}</span>
+          <span class="leg-dur-val">${f.raw_return ? parseDuration(f.raw_return.duration) > 0 ? Math.floor(parseDuration(f.raw_return.duration)/60)+'h '+(parseDuration(f.raw_return.duration)%60)+'m' : '—' : '—'}</span>
+        </div>
+      </div>
       <div class="stats-row">
-        <div class="stat"><span class="s-lbl">Total flight time</span><span class="s-val ${tc}">${totStr}</span></div>
         <div class="stat"><span class="s-lbl">Train → Cinque Terre</span><span class="s-val vc">${trainStr}</span></div>
-        <div class="stat"><span class="s-lbl">Stops</span><span class="s-val vc">${nonstop?'Nonstop':(f.stops_label||legs.length-1+' stop')}</span></div>
+        <div class="stat"><span class="s-lbl">Outbound time</span><span class="s-val ${tc}">${totStr}</span></div>
       </div>
     </div>
     <div class="card-cta">
@@ -723,20 +729,11 @@ function buildCard(f,cityId,ai,ao,wk,over15){
         <div class="price-lbl">Est. total (both legs)</div>
         <div class="price-val ${pc}">${f.ret_raw_price && price < 99990 ? '$'+price.toLocaleString() : rawPrice}</div>
         <div style="font-size:.58rem;color:var(--cream-dim);text-align:right;margin-top:2px;line-height:1.4">
-          ${f.ret_raw_price ? `${f.raw_price||'?'} out · ${f.ret_raw_price} ret` : 'outbound leg only'}
+          ${f.is_roundtrip ? 'round-trip incl. return' : (f.ret_raw_price ? `${f.raw_price||'?'} out · ${f.ret_raw_price} ret` : 'outbound only')}
         </div>
         <div class="live-badge">● live</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
-        <a href="${getAirlineUrl(legs[0]?.airline||'', c.code, ai, depDate2)}"
-           target="_blank" class="btn-book" style="font-size:.72rem;padding:7px 13px">
-          Book Outbound ↗
-        </a>
-        <a href="${buildOpenJawUrl(c.code, ai, ao, c.code, depDate2, w.ret)}"
-           target="_blank" style="font-size:.64rem;color:var(--cream-dim);text-decoration:underline;text-align:right;padding-right:2px">
-          or search open-jaw
-        </a>
-      </div>
+      <a href="${buildOpenJawUrl(c.code, ai, ao, c.code, depDate2, w.ret)}" target="_blank" class="btn-book">Book ↗</a>
     </div>
   </div>`;
 }
