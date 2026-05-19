@@ -589,6 +589,49 @@ function renderResults(){
 }
 
 
+// Airline direct booking URL templates
+// {FROM}, {TO}, {DATE} are substituted with actual values
+const AIRLINE_URLS = {
+  'Delta':            'https://www.delta.com/us/en/flight-search/search?tripType=ONE_WAY&origin={FROM}&destination={TO}&departureDate={DATE}&paxCount=1&selectedProducts=MAIN',
+  'American':         'https://www.aa.com/booking/search?locale=en_US&pax=1&adult=1&type=OneWay&searchType=Flight&carriers=ALL&outbDate={DATE}&outbFrom={FROM}&outbTo={TO}',
+  'United':           'https://www.united.com/en/us/fsr/choose-flights?f={FROM}&t={TO}&d={DATE}&tt=1&at=1&sc=7&px=1&taxng=1&newHP=True',
+  'Lufthansa':        'https://www.lufthansa.com/us/en/flight-search#outward={FROM}-{TO}-{DATE};cabin=Y;adult=1',
+  'British Airways':  'https://www.britishairways.com/travel/fx/public/en_us?eId=106047&from={FROM}&to={TO}&depart={DATE}&cabin=M&adult=1',
+  'ITA Airways':      'https://www.itaairways.com/en/flight-search?origin={FROM}&destination={TO}&departureDate={DATE}&adults=1&cabinClass=economy&tripType=ONE_WAY',
+  'Air France':       'https://www.airfrance.us/search/results?pax=1:0:0:0:0:0:0:0&cabinClass=ECONOMY&leg={FROM}:{TO}:{DATE}&tripType=OW',
+  'KLM':              'https://www.klm.com/search/results?pax=1:0:0:0:0:0:0:0&cabinClass=ECONOMY&leg={FROM}:{TO}:{DATE}&tripType=OW',
+  'Emirates':         'https://www.emirates.com/us/english/book/flights/#/?type=O&class=ECO&adults=1&from={FROM}&to={TO}&depart={DATE}',
+  'Icelandair':       'https://www.icelandair.com/flights/booking/?cabin=economy&adults=1&fromcity={FROM}&tocity={TO}&outdate={DATE}&triptype=oneway',
+  'Norse Atlantic':   'https://www.flynorse.com/en-us/flights?origin={FROM}&destination={TO}&departureDate={DATE}&adults=1&cabin=economy&tripType=ONE_WAY',
+  'TAP Air Portugal': 'https://www.flytap.com/en-us/flight-search?adults=1&cabin=economy&tripType=one-way&origin={FROM}&destination={TO}&outboundDate={DATE}',
+  'Swiss':            'https://www.swiss.com/us/en/book/flights#outward={FROM}-{TO}-{DATE};cabin=Y;adult=1',
+  'SWISS':            'https://www.swiss.com/us/en/book/flights#outward={FROM}-{TO}-{DATE};cabin=Y;adult=1',
+  'Aer Lingus':       'https://www.aerlingus.com/flights/searchresults/?flightSearchType=1&adult=1&originIata={FROM}&destinationIata={TO}&outboundDate={DATE}',
+  'SAS':              'https://www.flysas.com/en/us/book/flights/?origin={FROM}&destination={TO}&outboundDate={DATE}&adt=1&cabin=M&tripType=oneWay',
+  'Finnair':          'https://www.finnair.com/en-gb/flight-search?adults=1&cabin=ECONOMY&tripType=ONEWAY&origin={FROM}&destination={TO}&departureDate={DATE}',
+  'Iberia':           'https://www.iberia.com/us/flights/?or={FROM}&de={TO}&ida={DATE}&v=1&ad=1&cl=N&tf=IB',
+};
+
+function getAirlineUrl(airlineName, from, to, date) {
+  // Try exact match first, then partial match
+  let template = AIRLINE_URLS[airlineName];
+  if (!template) {
+    const key = Object.keys(AIRLINE_URLS).find(k =>
+      airlineName.toLowerCase().includes(k.toLowerCase()) ||
+      k.toLowerCase().includes(airlineName.toLowerCase())
+    );
+    template = key ? AIRLINE_URLS[key] : null;
+  }
+  if (!template) {
+    // Fallback to Google Flights open-jaw search
+    return buildOpenJawUrl(from, to, to, from, date, date);
+  }
+  return template
+    .replace(/{FROM}/g, from)
+    .replace(/{TO}/g, to)
+    .replace(/{DATE}/g, date);
+}
+
 // Build a true open-jaw Google Flights URL (type 2, no footer)
 // Matches the exact format used by Google Flights / SerpApi
 function buildOpenJawUrl(fromCode, toCode, retFromCode, retToCode, outDate, retDate) {
@@ -684,7 +727,16 @@ function buildCard(f,cityId,ai,ao,wk,over15){
         </div>
         <div class="live-badge">● live</div>
       </div>
-      <a href="${buildOpenJawUrl(c.code, ai, ao, c.code, depDate2, w.ret)}" target="_blank" class="btn-book">Book ↗</a>
+      <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
+        <a href="${getAirlineUrl(legs[0]?.airline||'', c.code, ai, depDate2)}"
+           target="_blank" class="btn-book" style="font-size:.72rem;padding:7px 13px">
+          Book Outbound ↗
+        </a>
+        <a href="${buildOpenJawUrl(c.code, ai, ao, c.code, depDate2, w.ret)}"
+           target="_blank" style="font-size:.64rem;color:var(--cream-dim);text-decoration:underline;text-align:right;padding-right:2px">
+          or search open-jaw
+        </a>
+      </div>
     </div>
   </div>`;
 }
