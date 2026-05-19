@@ -55,24 +55,44 @@ def search_flights(
     is_roundtrip = (to_airport == return_from)
 
     if is_roundtrip:
-        # Same airport in and out — search as a true round-trip for accurate pricing
+        # Same airport in and out — true round-trip search
+        # Result.flights contains outbound options; price is the combined RT fare
         try:
-            result: Result = get_flights(
+            rt_result: Result = get_flights(
                 flight_data=[
                     FlightData(date=date_out, from_airport=from_airport, to_airport=to_airport),
                     FlightData(date=date_ret, from_airport=return_from, to_airport=from_airport),
                 ],
-                trip="round-trip", seat="economy",
+                trip="round-trip",
+                seat="economy",
                 passengers=Passengers(adults=adults),
                 fetch_mode="fallback",
             )
-            out_flights = serialize(result)
-            # For round-trip, return leg is embedded in the same result
+            out_flights = serialize(rt_result)
+            # Round-trip result has no separate return list — price already covers both
             ret_flights = []
         except Exception as e:
             out_error = str(e)
+            # Fallback: two one-ways if round-trip fails
+            try:
+                r1 = get_flights(
+                    flight_data=[FlightData(date=date_out, from_airport=from_airport, to_airport=to_airport)],
+                    trip="one-way", seat="economy",
+                    passengers=Passengers(adults=adults), fetch_mode="fallback",
+                )
+                r2 = get_flights(
+                    flight_data=[FlightData(date=date_ret, from_airport=return_from, to_airport=from_airport)],
+                    trip="one-way", seat="economy",
+                    passengers=Passengers(adults=adults), fetch_mode="fallback",
+                )
+                out_flights = serialize(r1)
+                ret_flights = serialize(r2)
+                is_roundtrip = False  # fell back to two one-ways
+                out_error = None
+            except Exception as e2:
+                out_error = f"RT failed: {out_error} | Fallback failed: {str(e2)}"
     else:
-        # Different in/out airports — search two one-ways and combine prices
+        # Different in/out airports — two separate one-ways
         try:
             out_result: Result = get_flights(
                 flight_data=[FlightData(date=date_out, from_airport=from_airport, to_airport=to_airport)],
