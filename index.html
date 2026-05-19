@@ -577,9 +577,8 @@ function renderResults(){
 }
 
 
-// Build a real Google Flights URL using protobuf (tfs=) encoding
-// Verified against Google's own URL format - generates working deep links
-function buildGoogleFlightsUrl(fromCode, toCode, retFromCode, retToCode, outDate, retDate) {
+// Build a one-way Google Flights URL using protobuf (tfs=) encoding
+function buildOneWayUrl(fromCode, toCode, date) {
   function encodeAirport(code) {
     return new Uint8Array([0x08,0x01,0x12,0x03,code.charCodeAt(0),code.charCodeAt(1),code.charCodeAt(2)]);
   }
@@ -596,11 +595,11 @@ function buildGoogleFlightsUrl(fromCode, toCode, retFromCode, retToCode, outDate
     let s=''; bytes.forEach(b=>s+=String.fromCharCode(b));
     return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   }
-  const header = [0x08,0x1c,0x10,0x02];
-  const footer = [0x42,0x01,0x01,0x48,0x01,0x70,0x01,0x98,0x01,0x01,0xc8,0x01,0x01];
-  const l1 = encodeLeg(outDate, fromCode, toCode);
-  const l2 = encodeLeg(retDate, retFromCode, retToCode);
-  const tfs = toBase64Url(new Uint8Array([...header,...l1,...l2,...footer]));
+  // One-way header/footer (field 2 = 1 for one-way)
+  const header = [0x08,0x1c,0x10,0x01];
+  const footer = [0x48,0x01,0x70,0x01,0x98,0x01,0x01,0xc8,0x01,0x01];
+  const leg = encodeLeg(date, fromCode, toCode);
+  const tfs = toBase64Url(new Uint8Array([...header,...leg,...footer]));
   return `https://www.google.com/travel/flights?hl=en&gl=us&curr=USD&tfs=${tfs}`;
 }
 
@@ -613,7 +612,7 @@ function buildCard(f,cityId,ai,ao,wk,over15){
   const totStr=tot?`${Math.floor(tot/60)}h ${tot%60}m`:'—';
   const price=f.price||0;
   const rawPrice=f.raw_price||(price?`$${price.toLocaleString()}`:'—');
-  const pc=price<450?'pg':price<650?'pa':'pr';
+  const pc=price<700?'pg':price<1000?'pa':'pr'; // combined RT price thresholds
   const tc=tot>840?'vr':tot>720?'va':'vg';
   const trainMins=TRAIN_CT[ai]||90;
   const trainStr=`~${Math.floor(trainMins/60)}h${trainMins%60?' '+(trainMins%60)+'m':''}`;
@@ -637,9 +636,7 @@ function buildCard(f,cityId,ai,ao,wk,over15){
       legsHtml+=`<div class="layover-row">⏱ ${Math.floor(ld/60)}h ${ld%60}m · ${layovers[i].name}${layovers[i].overnight?' (overnight)':''}</div>`;}
   });
 
-  // Build a Google Flights search URL pre-filled with this route and date
   const depDate2 = f.day==='Fri' ? w.outFri : w.outSat;
-  const bookUrl = buildGoogleFlightsUrl(c.code, ai, ao, c.code, depDate2, w.ret);
 
   return `<div class="flight-card${over15?' over-limit':''}" style="animation-delay:${(Math.random()*.15).toFixed(2)}s">
     <div class="card-stripe stripe-${cityId}"></div>
@@ -666,11 +663,19 @@ function buildCard(f,cityId,ai,ao,wk,over15){
     </div>
     <div class="card-cta">
       <div>
-        <div class="price-lbl">Per person</div>
-        <div class="price-val ${pc}">${rawPrice}</div>
+        <div class="price-lbl">Est. round trip</div>
+        <div class="price-val ${pc}">${f.ret_raw_price ? `${f.raw_price||'?'} + ${f.ret_raw_price}` : rawPrice}</div>
+        <div style="font-size:.58rem;color:var(--cream-dim);text-align:right;margin-top:2px">${f.ret_raw_price ? 'out + return' : 'outbound only'}</div>
         <div class="live-badge">● live</div>
       </div>
-      <a href="${bookUrl}" target="_blank" class="btn-book">Book ↗</a>
+      <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
+        <a href="${buildOneWayUrl(c.code, ai, depDate2)}" target="_blank" class="btn-book" style="font-size:.7rem;padding:6px 11px;background:var(--gold)">
+          ✈ Outbound ↗
+        </a>
+        <a href="${buildOneWayUrl(ao, c.code, w.ret)}" target="_blank" class="btn-book" style="font-size:.7rem;padding:6px 11px;background:rgba(212,168,67,0.4);color:var(--cream)">
+          ↩ Return ↗
+        </a>
+      </div>
     </div>
   </div>`;
 }
