@@ -577,33 +577,33 @@ function renderResults(){
 }
 
 
-// Build a Google Flights open-jaw search URL
-// Uses the /search endpoint with readable params Google accepts
+// Build a real Google Flights URL using protobuf (tfs=) encoding
+// Verified against Google's own URL format - generates working deep links
 function buildGoogleFlightsUrl(fromCode, toCode, retFromCode, retToCode, outDate, retDate) {
-  // Format: google.com/travel/flights/search with tfs param
-  // We encode as a multi-city search which Google Flights understands
-  // Leg 1: US → Italy (outDate), Leg 2: Italy → US (retDate)
-  const base = 'https://www.google.com/travel/flights/search';
-  const params = new URLSearchParams({
-    hl: 'en',
-    gl: 'us',
-    curr: 'USD',
-    // Google Flights also accepts these direct params for simple searches
-    // For open-jaw we use the tfs-less multi-city format via the q param
-  });
-  // Most reliable open-jaw deep link: encode as two one-way searches visually
-  // but use Google's supported URL structure
-  const outDateFmt = outDate; // YYYY-MM-DD
-  const retDateFmt = retDate;
-  // Google Flights supports this URL pattern for pre-filled searches:
-  const url = `${base}?hl=en&gl=us&curr=USD` +
-    `&tfs=CBwQAhoeEg${btoa(`
-${outDateFmt}`).replace(/=/g,'')}agcIARID${btoa(fromCode).replace(/=/g,'')}cgcIARID${btoa(toCode).replace(/=/g,'')}` +
-    `Gh4SCg${btoa(`
-${retDateFmt}`).replace(/=/g,'')}agcIARID${btoa(retFromCode).replace(/=/g,'')}cgcIARID${btoa(retToCode).replace(/=/g,'')}`;
-  // Fallback: simple Google Flights URL with from/to/date visible in query
-  return `https://www.google.com/travel/flights/search?hl=en&gl=us&curr=USD#flt=${fromCode}.${toCode}.${outDateFmt}*${retFromCode}.${retToCode}.${retDateFmt};c:USD;e:1;sd:1;t:f`;
+  function encodeAirport(code) {
+    return new Uint8Array([0x08,0x01,0x12,0x03,code.charCodeAt(0),code.charCodeAt(1),code.charCodeAt(2)]);
+  }
+  function encodeLeg(date, from, to) {
+    const d = new TextEncoder().encode(date);
+    const dep = encodeAirport(from), arr = encodeAirport(to);
+    const datePb = new Uint8Array([0x12, d.length, ...d]);
+    const depPb  = new Uint8Array([0x6a, dep.length, ...dep]);
+    const arrPb  = new Uint8Array([0x72, arr.length, ...arr]);
+    const leg = new Uint8Array([...datePb,...depPb,...arrPb]);
+    return new Uint8Array([0x1a, leg.length, ...leg]);
+  }
+  function toBase64Url(bytes) {
+    let s=''; bytes.forEach(b=>s+=String.fromCharCode(b));
+    return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  const header = [0x08,0x1c,0x10,0x02];
+  const footer = [0x42,0x01,0x01,0x48,0x01,0x70,0x01,0x98,0x01,0x01,0xc8,0x01,0x01];
+  const l1 = encodeLeg(outDate, fromCode, toCode);
+  const l2 = encodeLeg(retDate, retFromCode, retToCode);
+  const tfs = toBase64Url(new Uint8Array([...header,...l1,...l2,...footer]));
+  return `https://www.google.com/travel/flights?hl=en&gl=us&curr=USD&tfs=${tfs}`;
 }
+
 
 function buildCard(f,cityId,ai,ao,wk,over15){
   const c=CITIES[cityId], w=WEEKS[wk];
