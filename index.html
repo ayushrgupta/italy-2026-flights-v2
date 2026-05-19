@@ -589,9 +589,8 @@ function renderResults(){
 }
 
 
-// Build a true open-jaw Google Flights URL (type 3 = multi-city)
-// Leg 1: US city → Italian arrival airport (outDate)
-// Leg 2: Italian departure airport → US city (retDate)
+// Build a true open-jaw Google Flights URL (type 2, no footer)
+// Matches the exact format used by Google Flights / SerpApi
 function buildOpenJawUrl(fromCode, toCode, retFromCode, retToCode, outDate, retDate) {
   function encodeAirport(code) {
     return new Uint8Array([0x08,0x01,0x12,0x03,
@@ -611,11 +610,10 @@ function buildOpenJawUrl(fromCode, toCode, retFromCode, retToCode, outDate, retD
     let s=''; bytes.forEach(b => s += String.fromCharCode(b));
     return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   }
-  const header = [0x08,0x1c,0x10,0x03]; // type 3 = open-jaw / multi-city
-  const footer = [0x42,0x01,0x01,0x48,0x01,0x70,0x01,0x98,0x01,0x01,0xc8,0x01,0x01];
+  const header = [0x08,0x1c,0x10,0x02]; // type 2 = open-jaw, no footer needed
   const l1  = encodeLeg(outDate, fromCode, toCode);
   const l2  = encodeLeg(retDate, retFromCode, retToCode);
-  const tfs = toBase64Url(new Uint8Array([...header,...l1,...l2,...footer]));
+  const tfs = toBase64Url(new Uint8Array([...header,...l1,...l2]));
   return `https://www.google.com/travel/flights?hl=en&gl=us&curr=USD&tfs=${tfs}`;
 }
 
