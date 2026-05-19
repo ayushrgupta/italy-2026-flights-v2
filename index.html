@@ -576,6 +576,35 @@ function renderResults(){
   el.innerHTML=html;
 }
 
+
+// Build a Google Flights open-jaw search URL
+// Uses the /search endpoint with readable params Google accepts
+function buildGoogleFlightsUrl(fromCode, toCode, retFromCode, retToCode, outDate, retDate) {
+  // Format: google.com/travel/flights/search with tfs param
+  // We encode as a multi-city search which Google Flights understands
+  // Leg 1: US → Italy (outDate), Leg 2: Italy → US (retDate)
+  const base = 'https://www.google.com/travel/flights/search';
+  const params = new URLSearchParams({
+    hl: 'en',
+    gl: 'us',
+    curr: 'USD',
+    // Google Flights also accepts these direct params for simple searches
+    // For open-jaw we use the tfs-less multi-city format via the q param
+  });
+  // Most reliable open-jaw deep link: encode as two one-way searches visually
+  // but use Google's supported URL structure
+  const outDateFmt = outDate; // YYYY-MM-DD
+  const retDateFmt = retDate;
+  // Google Flights supports this URL pattern for pre-filled searches:
+  const url = `${base}?hl=en&gl=us&curr=USD` +
+    `&tfs=CBwQAhoeEg${btoa(`
+${outDateFmt}`).replace(/=/g,'')}agcIARID${btoa(fromCode).replace(/=/g,'')}cgcIARID${btoa(toCode).replace(/=/g,'')}` +
+    `Gh4SCg${btoa(`
+${retDateFmt}`).replace(/=/g,'')}agcIARID${btoa(retFromCode).replace(/=/g,'')}cgcIARID${btoa(retToCode).replace(/=/g,'')}`;
+  // Fallback: simple Google Flights URL with from/to/date visible in query
+  return `https://www.google.com/travel/flights/search?hl=en&gl=us&curr=USD#flt=${fromCode}.${toCode}.${outDateFmt}*${retFromCode}.${retToCode}.${retDateFmt};c:USD;e:1;sd:1;t:f`;
+}
+
 function buildCard(f,cityId,ai,ao,wk,over15){
   const c=CITIES[cityId], w=WEEKS[wk];
   const legs=f.flights||[], layovers=f.layovers||[];
@@ -608,9 +637,9 @@ function buildCard(f,cityId,ai,ao,wk,over15){
       legsHtml+=`<div class="layover-row">⏱ ${Math.floor(ld/60)}h ${ld%60}m · ${layovers[i].name}${layovers[i].overnight?' (overnight)':''}</div>`;}
   });
 
-  const bookUrl=f.booking_token
-    ?`https://www.google.com/travel/flights?tfs=${encodeURIComponent(f.booking_token)}`
-    :'https://www.google.com/travel/flights';
+  // Build a Google Flights search URL pre-filled with this route and date
+  const depDate2 = f.day==='Fri' ? w.outFri : w.outSat;
+  const bookUrl = buildGoogleFlightsUrl(c.code, ai, ao, c.code, depDate2, w.ret);
 
   return `<div class="flight-card${over15?' over-limit':''}" style="animation-delay:${(Math.random()*.15).toFixed(2)}s">
     <div class="card-stripe stripe-${cityId}"></div>
