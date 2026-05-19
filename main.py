@@ -52,36 +52,54 @@ def search_flights(
 ):
     out_flights, ret_flights = [], []
     out_error, ret_error = None, None
+    is_roundtrip = (to_airport == return_from)
 
-    # Outbound leg
-    try:
-        out_result: Result = get_flights(
-            flight_data=[FlightData(date=date_out, from_airport=from_airport, to_airport=to_airport)],
-            trip="one-way", seat="economy",
-            passengers=Passengers(adults=adults),
-            fetch_mode="fallback",
-        )
-        out_flights = serialize(out_result)
-    except Exception as e:
-        out_error = str(e)
+    if is_roundtrip:
+        # Same airport in and out — search as a true round-trip for accurate pricing
+        try:
+            result: Result = get_flights(
+                flight_data=[
+                    FlightData(date=date_out, from_airport=from_airport, to_airport=to_airport),
+                    FlightData(date=date_ret, from_airport=return_from, to_airport=from_airport),
+                ],
+                trip="round-trip", seat="economy",
+                passengers=Passengers(adults=adults),
+                fetch_mode="fallback",
+            )
+            out_flights = serialize(result)
+            # For round-trip, return leg is embedded in the same result
+            ret_flights = []
+        except Exception as e:
+            out_error = str(e)
+    else:
+        # Different in/out airports — search two one-ways and combine prices
+        try:
+            out_result: Result = get_flights(
+                flight_data=[FlightData(date=date_out, from_airport=from_airport, to_airport=to_airport)],
+                trip="one-way", seat="economy",
+                passengers=Passengers(adults=adults),
+                fetch_mode="fallback",
+            )
+            out_flights = serialize(out_result)
+        except Exception as e:
+            out_error = str(e)
 
-    # Return leg — run independently so one failure doesn't kill both
-    try:
-        ret_result: Result = get_flights(
-            flight_data=[FlightData(date=date_ret, from_airport=return_from, to_airport=from_airport)],
-            trip="one-way", seat="economy",
-            passengers=Passengers(adults=adults),
-            fetch_mode="fallback",
-        )
-        ret_flights = serialize(ret_result)
-    except Exception as e:
-        ret_error = str(e)
+        try:
+            ret_result: Result = get_flights(
+                flight_data=[FlightData(date=date_ret, from_airport=return_from, to_airport=from_airport)],
+                trip="one-way", seat="economy",
+                passengers=Passengers(adults=adults),
+                fetch_mode="fallback",
+            )
+            ret_flights = serialize(ret_result)
+        except Exception as e:
+            ret_error = str(e)
 
-    # Return results even if one leg failed — frontend handles partial data
     return JSONResponse({
-        "outbound":  out_flights,
-        "return":    ret_flights,
-        "out_error": out_error,
-        "ret_error": ret_error,
+        "outbound":      out_flights,
+        "return":        ret_flights,
+        "is_roundtrip":  is_roundtrip,
+        "out_error":     out_error,
+        "ret_error":     ret_error,
         "current_price": None,
     })
