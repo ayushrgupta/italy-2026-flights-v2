@@ -438,25 +438,37 @@ async function runSearch(){
         fetchFlights(c.code,ai,ao,w.outSat,w.ret,null),
       ]);
       // fast-flights returns {outbound:[...], return:[...]}
-      const normalize=(data,day)=>(data?.outbound||[]).map(f=>({
-        price:           parsePrice(f.price),
-        total_duration:  parseDuration(f.duration),
-        flights:[{
-          departure_airport:{id:c.code, time:f.departure||''},
-          arrival_airport:  {id:ai,     time:f.arrival||''},
-          airline:    f.name||'',
-          airline_logo:'',
-          flight_number:'',
-          duration:   parseDuration(f.duration),
-          overnight:  false,
-        }],
-        layovers:[],
-        is_best:      f.is_best||false,
-        stops_label:  String(f.stops||''),
-        day:          day,
-        raw_price:    f.price,
-        current_price: data.current_price||null,
-      }));
+      // Pair each outbound flight with the cheapest return flight
+      const bestRet = (fri?.return||[]).concat(sat?.return||[])
+        .sort((a,b)=>parsePrice(a.price)-parsePrice(b.price))[0]||null;
+
+      const normalize=(data,day)=>(data?.outbound||[]).map(f=>{
+        const outPrice = parsePrice(f.price);
+        const retPrice = bestRet ? parsePrice(bestRet.price) : 0;
+        const totalPrice = (outPrice<99999 && retPrice>0) ? outPrice+retPrice : outPrice;
+        return {
+          price:          totalPrice,
+          out_price:      outPrice,
+          ret_price:      retPrice,
+          raw_price:      f.price,
+          ret_raw_price:  bestRet ? bestRet.price : null,
+          total_duration: parseDuration(f.duration),
+          flights:[{
+            departure_airport:{id:c.code, time:f.departure||''},
+            arrival_airport:  {id:ai,     time:f.arrival||''},
+            airline:    f.name||'',
+            airline_logo:'',
+            flight_number:'',
+            duration:   parseDuration(f.duration),
+            overnight:  false,
+          }],
+          layovers:[],
+          is_best:     f.is_best||false,
+          stops_label: String(f.stops||''),
+          day:         day,
+          current_price: data.current_price||null,
+        };
+      });
       const all=[...normalize(fri,'Fri'),...normalize(sat,'Sat')]
         .sort((a,b)=>(a.price||99999)-(b.price||99999));
       cache[key]={flights:all,city,ai,ao,wk};
