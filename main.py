@@ -33,15 +33,13 @@ def search_flights(
     try:
         out_result: Result = get_flights(
             flight_data=[FlightData(date=date_out, from_airport=from_airport, to_airport=to_airport)],
-            trip="one-way",
-            seat="economy",
+            trip="one-way", seat="economy",
             passengers=Passengers(adults=adults),
             fetch_mode="fallback",
         )
         ret_result: Result = get_flights(
             flight_data=[FlightData(date=date_ret, from_airport=return_from, to_airport=from_airport)],
-            trip="one-way",
-            seat="economy",
+            trip="one-way", seat="economy",
             passengers=Passengers(adults=adults),
             fetch_mode="fallback",
         )
@@ -51,23 +49,34 @@ def search_flights(
                 return []
             return [
                 {
-                    "price":    f.price,
-                    "name":     f.name,
+                    "price":     f.price,         # raw string e.g. "$379"
+                    "name":      f.name,
                     "departure": f.departure,
-                    "arrival":  f.arrival,
-                    "duration": f.duration,
-                    "stops":    f.stops,
-                    "is_best":  getattr(f, 'is_best', False),
-                    "delay":    getattr(f, 'delay', None),
+                    "arrival":   f.arrival,
+                    "duration":  f.duration,
+                    "stops":     f.stops,
+                    "is_best":   getattr(f, 'is_best', False),
+                    "delay":     getattr(f, 'delay', None),
                 }
                 for f in result.flights[:5]
             ]
 
+        out_flights = serialize(out_result)
+        ret_flights = serialize(ret_result)
+
         return JSONResponse({
-            "outbound":      serialize(out_result),
-            "return":        serialize(ret_result),
+            "outbound":      out_flights,
+            "return":        ret_flights,
+            # Convenience: best combined price (cheapest outbound + cheapest return)
+            "best_combined": {
+                "outbound": out_flights[0] if out_flights else None,
+                "return":   ret_flights[0] if ret_flights else None,
+            },
             "current_price": getattr(out_result, 'current_price', None),
         })
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e), "trace": traceback.format_exc()})
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "trace": traceback.format_exc()}
+        )
